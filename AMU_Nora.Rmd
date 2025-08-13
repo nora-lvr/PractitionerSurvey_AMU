@@ -1,0 +1,851 @@
+---
+title: "Antimicrobial Use Survey - New Figures"
+output:
+  word_document:
+    toc: true
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+
+
+```{r include=FALSE}
+library(tidyverse)
+#library(ggsci)
+#library(ggplot2)
+#library(knitr)
+#library(dplyr)
+#library(data.table)
+#library(colorspace)
+#library(rcartocolor)
+library(RColorBrewer)
+#library(mosaic)
+#library(lme4)
+#library(viridis)
+#library(viridisLite)
+
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+
+```
+
+## Read Data
+```{r}
+
+AMU_Survey_Final<- read_csv("AMU_Survey_Final_revised.csv", 
+                            col_types = cols(.default = 'c'))
+
+```
+
+
+```{r}
+
+AMU_survey_clean_long<-AMU_Survey_Final%>%
+  filter(Finished %in% 'TRUE')%>%
+  pivot_longer(cols = starts_with('Q'), 
+               names_to = 'Question', 
+               values_to = 'Answer')%>%
+  mutate(Answer = case_when(
+    is.na(Answer)~'No Response',
+    TRUE~Answer))
+
+AMU_shiny<-AMU_survey_clean_long%>%
+  select(ResponseId, grad_year:certificate_program, Question, Answer)%>%
+  filter(!(Question %in% c('Q1', 'Q2', 'Q3', 'Q4', 'Q5', 'Q6')))%>%
+  mutate(
+    grad_year_cat = case_when(
+      is.na(grad_year_cat)~'No Response', 
+      TRUE~grad_year_cat), 
+    grad_year = parse_number(grad_year)
+  )
+write_rds(AMU_shiny, 'shinyAMUsurvey/AMUdata.rds')
+sk_AMU<-skimr::skim(AMU_shiny)
+
+df<-AMU_shiny
+  
+```
+
+## Demographics
+
+Q2 - Year of Graduation from a College of Veterinary Medicine
+Q3 License to Practice
+Q4 Current Food Animal Practice Situation
+Q5 Organization Membership
+Q6 Food Animal Species Serving Practice
+
+```{r}
+Demographics<-AMU_Survey_Final%>%
+  select(Q2:Q6)
+
+ggplot(Demographics)+
+  geom_bar(aes(x = parse_number(Q2), fill = Q3))+
+  xlab('DVM Gradution Year')+
+  labs(fill = "License to Practice'", 
+       title = 'Year of Graduation')
+
+
+```
+
+```{r}
+ggplot(Demographics)+
+  geom_bar(aes(x = Q4, fill = Q4))+
+  theme_bw()+
+  theme(legend.position = 'none')+
+  coord_flip()
+
+```
+
+
+
+```{r}
+Demographics_parsed<-Demographics%>%
+  mutate(Q5 = case_when(
+    is.na(Q5)~'No Response', 
+    TRUE~Q5), 
+    Q6 = case_when(
+    is.na(Q6)~'No Response', 
+    TRUE~Q6))%>%
+  mutate(AABP = str_detect(Q5, 'AABP'), 
+         AVC = str_detect(Q5, 'AVC'), 
+         AASRP = str_detect(Q5, 'AASRP'), 
+         AASV = str_detect(Q5, 'AASV'), 
+         AVMA = str_detect(Q5, 'AVMA'), 
+         StateAssoc = str_detect(Q5, 'state'), 
+         International = str_detect(Q5, 'National'),
+         
+         Dairy = str_detect(Q6, 'Dairy'),
+         Beef = str_detect(Q6, 'Beef'),
+         Swine = str_detect(Q6, 'Swine'),
+         Sheep = str_detect(Q6, 'Sheep'),
+         Goats = str_detect(Q6, 'Goats'),
+         Chickens = str_detect(Q6, 'Chicken'),
+         Turkeys = str_detect(Q6, 'Turkey'),
+         
+         )
+```
+
+
+```{r}
+Q5_parsed<-Demographics_parsed%>%
+  pivot_longer(cols = AABP:International, 
+               names_to = 'Organization', 
+               values_to = 'Member')
+
+ggplot(Q5_parsed)+
+  geom_bar(aes(x = Organization, fill = Member))+
+  scale_fill_manual(values = c('white', 'blue'))+
+  theme_bw()+
+  theme(legend.position = 'none')
+
+
+  
+  
+
+```
+
+```{r}
+Q6_parsed<-Demographics_parsed%>%
+  pivot_longer(cols = Dairy:Turkeys, 
+               names_to = 'Species', 
+               values_to = 'Member')
+
+ggplot(Q6_parsed)+
+  geom_bar(aes(x = Species, fill = Member))+
+  scale_fill_manual(values = c('white', 'blue'))+
+  theme_bw()+
+  theme(legend.position = 'none')
+
+ggplot(Q6_parsed%>%filter(Member %in% 'TRUE'))+
+  geom_bar(aes(Species, fill = Q4))+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  
+  
+
+```
+
+
+
+## Question 7 - what matters
+
+Inputs that Contribute to Decisions in Selecting a Food Animal Antimicrobial Regimen
+
+```{r}
+df7<-df%>%filter(str_detect(Question, 'Q7'))%>%
+  mutate(Qtype = case_when(
+    str_count(Question)<5~'original', 
+    TRUE~'modified'
+  ))%>%
+  mutate(Question2 = case_when(
+    (Question %in% 'Q7_1')~'Cost', 
+        (Question %in% 'Q7_2')~'Efficacy', 
+    (Question %in% 'Q7_3')~'Practicality', 
+    (Question %in% 'Q7_4')~'Regulatory', 
+    (Question %in% 'Q7_5')~'Human Resistance', 
+    (Question %in% 'Q7_6')~'Animal Resistance', 
+    (Question %in% 'Q7_7')~'Client Preference', 
+    (Question %in% 'Q7_8')~'Human Importance', 
+ TRUE~Question
+  ))
+
+df7_original<-df7%>%
+  filter(Qtype %in% 'original')%>%
+  mutate(Answer = factor(Answer, levels = c( "A major component of my decision process",
+                                             "Important, but not a major component" , 
+                                             "A very minor component", 
+                                             "Not considered",
+                                             "No Response" )))
+
+df7_modified<-df7%>%
+  filter(!(Qtype %in% 'original'))
+
+ggplot(df7_original)+
+  geom_bar(aes(x = Question2, fill = Answer ))+
+  #facet_wrap(grad_year_cat~., scale = 'free')+
+  coord_flip()+
+  scale_fill_manual(values = c( "A major component of my decision process" = '#a50f15',
+                                             "Important, but not a major component" = '#fb6a4a' , 
+                                             "A very minor component" = '#fcae91', 
+                                             "Not considered" = 'black',
+                                             "No Response" = 'grey' ))
+
+
+ggplot(df7_original)+
+  geom_bar(aes(x = Question2, fill = Answer ))+
+  facet_wrap(grad_year_cat~., scale = 'free')+
+  coord_flip()+
+  scale_fill_manual(values = c( "A major component of my decision process" = '#a50f15',
+                                             "Important, but not a major component" = '#fb6a4a' , 
+                                             "A very minor component" = '#fcae91', 
+                                             "Not considered" = 'black',
+                                             "No Response" = 'grey' ))+
+  theme_bw()+
+  theme(legend.position = 'none')
+
+ggplot(df7_original)+
+  geom_bar(aes(x = Question2, fill = Answer ))+
+  facet_wrap(practice_type~., scale = 'free')+
+  coord_flip()+
+  scale_fill_manual(values = c( "A major component of my decision process" = '#a50f15',
+                                             "Important, but not a major component" = '#fb6a4a' , 
+                                             "A very minor component" = '#fcae91', 
+                                             "Not considered" = 'black',
+                                             "No Response" = 'grey' ))+
+  theme_bw()+
+  theme(legend.position = 'none')
+
+
+
+
+# ggplot(df7_modified)+
+#   geom_bar(aes(x = Question, fill = Answer ))+
+#   facet_wrap(Qtype~., scale = 'free')+
+#   coord_flip()
+
+```
+
+
+
+## Question 8 
+
+What did we miss?
+
+
+
+```{r}
+
+df8<-df%>%filter(str_detect(Question, 'Q8'))
+
+table(df8$Answer)
+```
+
+## Question 9
+
+Q9 Extent of Antimicrobial Susceptibility Testing BEFORE Antibiotic Treatment
+Q10 Extent of Antimicrobial Susceptibility Testing AFTER ENCOUNTERING A PERCEIVED LACK OF TREATMENT EFFICACY
+Q11 Extent of Antimicrobial Susceptibility Testing to Routinely Monitor Antimicrobial Susceptibility of Pathogens Which Cause Disease in Your Client's Herd or Flocks
+## Q12 Extent of Antimicrobial Susceptibility Testing to Routinely Monitor Antimnicrobial Susceptibility of Potential Foodborne Pathogens in Your Client's Herd or Flocks
+
+```{r}
+
+df9<-df%>%filter(str_detect(Question, 'Q9'))
+df10<-df%>%filter(str_detect(Question, 'Q10'))
+df11<-df%>%filter(str_detect(Question, 'Q11'))
+df12<-df%>%filter(str_detect(Question, 'Q12'))
+
+df9_12<-bind_rows(df9, df10, df11, df12)%>%
+  mutate(Qtype = case_when(
+    str_count(Question)<5~'original', 
+    TRUE~'modified'
+  ))%>%
+  mutate(Answer2 = case_when(
+    str_detect(Answer, 'Occa')~'Occasionally (6-15%)',
+        str_detect(Answer, 'Occa')~'Occasionally (6-15%)',
+    str_detect(Answer, 'Oft')~'Often (>20%)',
+    str_detect(Answer, 'Rar')~'Rarely (1-5%)',
+    TRUE~Answer
+  ))%>%
+  mutate(Answer2 = factor(Answer2, 
+                          levels = c( "Often (>20%)",
+                                      "Occasionally (6-15%)", 
+                                      "Rarely (1-5%)",
+                                      "Never", 
+                                      "No Response", 
+                                      "Unknown")))
+
+
+
+ggplot(df9_12%>%
+         filter(Qtype %in% 'original'))+
+  geom_bar(aes(x = Question, fill = Answer2))+
+  coord_flip()+
+  facet_wrap(practice_type~., scale = 'free')+
+  scale_fill_manual(values = c( "Often (>20%)" = '#a50f15',
+                                
+                                             "Occasionally (6-15%)" = '#fb6a4a' , 
+                                             "Rarely (1-5%)" = '#fcae91', 
+                                             "Never"  = 'black',
+                                             "No Response" = 'grey', 
+                                'Unknown' = 'grey'
+                                ))
+
+
+```
+
+
+## Question 13, 14
+
+Q13 Monitor Antimicrobial Susceptibility of Pathogens Which Cause Disease (Y/N) (Staff Vets Only)
+Q14 Monitor Antimicrobial Susceptibility of Zoonotic Pathogens (Y/N) (Staff Vets Only)
+
+```{r}
+
+df13<-df%>%filter(Question %in% 'Q13')%>%
+  mutate(Question = 'Monitor Disease')
+df14<-df%>%filter(Question %in% 'Q14')%>%
+  mutate(Question = 'Monitor Zoonosis')
+
+df13_14<-bind_rows(df13, df14)%>%
+  filter(practice_type %in% 'Staff Vet')
+
+ggplot(df13_14)+
+  geom_bar(aes(x = Question, fill = Answer))+
+  coord_flip()
+
+```
+
+## Question 15
+
+```{r}
+
+df15<-df%>%filter(Question %in% 'Q15')%>%
+  separate(Answer, into = c('A', 'B', 'C', 'D', 'E'), sep = ',', extra = 'merge')%>%
+  pivot_longer(cols = A:E, 
+               names_to = 'name', 
+               values_to = 'Answer')%>%
+  filter(!(is.na(Answer)))
+
+ggplot(df15)+
+  geom_bar(aes(x = Answer, fill = Answer))+
+  coord_flip()+
+  theme(legend.position = 'None')
+
+
+```
+## Question 16
+
+Free text response . . . 
+
+```{r}
+df16<-df%>%filter(str_detect(Question, 'Q16'))
+
+```
+
+## Question 17
+
+Level of Confidence in Knowledge Related to Antimicrobial Use Areas
+
+```{r, fig.width=12, fig.height=12}
+df17<-df%>%filter(str_detect(Question, 'Q17'))%>%
+  mutate(Qtype = case_when(
+    str_count(Question)<6~'original', 
+    TRUE~'modified'
+  ))%>%
+  filter(Qtype %in% 'original')%>%
+  mutate(Answer = factor(Answer, 
+                         levels = c("Very confident",
+                                    "Confident",
+                                    "Low confidence",
+                                    "No Response",
+                                    "Not Applicable to my practice"
+                                    )))
+
+ggplot(df17%>%filter(Qtype %in% 'original'))+
+  geom_bar(aes(x = Answer, fill = Answer))+
+  facet_wrap(practice_type~., scale = 'free', ncol = 1)+
+  coord_flip()+
+  scale_fill_manual(values = c( "Very confident" = '#a50f15',
+                                
+                                             "Confident" = '#fb6a4a' , 
+                                             "Low confidence" = '#fcae91', 
+                                             "Not Applicable to my practice"  = 'black',
+                                             "No Response" = 'grey'
+                                ))
+```
+
+## Question 18
+
+Interest in Certificate Program
+
+```{r}
+df18<-df%>%filter(str_detect(Question, 'Q18'))%>%
+  mutate(Answer = factor(Answer, 
+                         levels = c("No",
+                                    "Yes, up to 10 hours commitment",
+                                    "Yes, up to 20 hours commitment",
+                                    "Yes, up to 40 hours commitment", 
+                                    'No Response'
+                                    )))
+
+ggplot(df18)+
+  geom_bar(aes(x = practice_type, fill = Answer))+
+  #facet_wrap(practice_type~., scale = 'free', ncol = 1)+
+  coord_flip()+
+  scale_fill_manual(values = c( "Yes, up to 40 hours commitment" = '#a50f15',
+                                
+                                             "Yes, up to 20 hours commitment" = '#fb6a4a' , 
+                                             "Yes, up to 10 hours commitment" = '#fcae91', 
+                                             "No"  = 'black',
+                                             "No Response" = 'grey'
+                                ))
+
+ggplot(df18)+
+  geom_bar(aes(x = practice_type, fill = Answer), position = position_fill())+
+  #facet_wrap(practice_type~., scale = 'free', ncol = 1)+
+  coord_flip()+
+  scale_fill_manual(values = c( "Yes, up to 40 hours commitment" = '#a50f15',
+                                
+                                             "Yes, up to 20 hours commitment" = '#fb6a4a' , 
+                                             "Yes, up to 10 hours commitment" = '#fcae91', 
+                                             "No"  = 'black',
+                                             "No Response" = 'grey'
+                                ))
+
+
+```
+
+
+## Question 19, 20
+
+Concern About AMR as Problem for Antimicrobial Efficacy in Treatment, Prevention, and Control of Livestock Diseases
+
+Concern About AMR in Livestock to Treat Bacterial Infections in Humans
+
+```{r}
+df19_20<-df%>%filter(str_detect(Question, 'Q19|Q20'))%>%
+  mutate(Question2 = case_when(
+    str_detect(Question, 'Q19')~'Livestock Disease', 
+    str_detect(Question, 'Q20')~'Human Disease', 
+    TRUE~'Unknown')
+    )%>%
+  mutate(Answer = factor(Answer, 
+                         levels = c('Significant', 'Moderate', 'Slight', 'None', 'No Response') ))
+
+ggplot(df19_20)+
+  geom_bar(aes(x = Question2, fill = Answer))+
+  xlab('')+
+  coord_flip()+
+  scale_fill_manual(values = c('Significant' = '#a50f15',
+                               'Moderate' = '#fb6a4a' ,
+                               'Slight' = '#fcae91',
+                               'None' = 'black',
+                               'No Response' = 'grey'))
+  facet_wrap(Question2~.)
+
+```
+
+## Question 21 to 23
+
+Client with good working relation requests antimicrobial for prevention and control of disease. How willing are you to take the risk of not authorizing continued use?
+
+Client with good working relation requests antimicrobial for prevention and control of disease. Risk percieved to relationship if signifcant spike in morbidity or mortality. 
+
+New client requests antimicrobial for prevention and control of disease. Risk percieved to relationship if significant spike in morbidity or mortality. 
+
+```{r}
+
+df21_23<-df%>%filter(str_detect(Question, 'Q21|Q22|Q23'))%>%
+  mutate(Qtype = case_when(
+    str_count(Question)<5~'original', 
+    TRUE~'modified'
+  ))%>%
+  filter(Qtype %in% 'original')%>%
+  mutate(Question2 = case_when(
+    str_detect(Question, 'Q21')~'Old Client, Discontinue Use', 
+    str_detect(Question, 'Q22')~'Old Client, Prevent Morbidity', 
+    str_detect(Question, 'Q23')~'New Client, Prevent Morbidity', 
+    TRUE~'Unknown')
+    )%>%
+  mutate(Question2 = factor(Question2, levels = c('Old Client, Discontinue Use',
+                                                  'Old Client, Prevent Morbidity',
+                                                  'New Client, Prevent Morbidity')))%>%
+  mutate(Answer2 = case_when(
+    Answer %in% "Willing but concerned about possible negative consequences"~"Willing but concerned", 
+    TRUE~Answer
+  ))%>%
+  mutate(Answer2 = factor(Answer2, 
+                         levels = c("High risk",
+                                     "Unwilling", 
+                                    "Moderate risk", 
+                                    "Willing but concerned", 
+                                    "Slight risk",
+                                    "No risk" ,
+                                    "Willing without hesitation",
+                                    "No Response"))
+         )
+
+ggplot(df21_23)+
+  geom_bar(aes(x = Question2, fill = Answer2))+
+  #facet_wrap(Question2~., ncol = 1, scale = 'free')+
+  coord_flip()+
+  scale_fill_manual(values = c("High risk" = 'black',
+                               "Unwilling" = 'black', 
+                               
+                               "Moderate risk" = '#fb6a4a' , 
+                                    "Willing but concerned" = '#fb6a4a' , 
+                                    "Slight risk" = '#fcae91',
+                                    
+                               "No risk" = '#a50f15',
+                                "Willing without hesitation" = '#a50f15',
+                                    "No Response" = 'grey'
+                                 ))
+
+```
+
+## Question 24, 25
+
+Q24 For what proportion of your food animal clients do you periodically review data which includes:
+
+Q25 For which of the following categories do you routinely review data from the flocks or herds under your care?
+
+
+```{r}
+
+df24_pre<-df%>%filter(str_detect(Question, 'Q24'))%>%
+  filter(!(practice_type %in% 'Staff Vet'))
+
+df25_pre<-df%>%filter(str_detect(Question, 'Q25'))%>%
+  filter((practice_type %in% 'Staff Vet'))
+
+df24<-bind_rows(df24_pre, df25_pre)%>%
+  mutate(Qtype = case_when(
+    str_count(Question)<6~'original', 
+    TRUE~'modified'
+  ))%>%
+  filter(Qtype %in% 'original')%>%
+  mutate(Question2 = case_when(
+    (Question %in% 'Q24_1')~'Repro', 
+    (Question %in% 'Q24_2')~'Econ', 
+    (Question %in% 'Q24_3')~'disease incidence', 
+    (Question %in% 'Q24_4')~'AMU', 
+    (Question %in% 'Q24_5')~'treatment outcomes', 
+    
+     (Question %in% 'Q25_1')~'Repro', 
+    (Question %in% 'Q25_2')~'Econ', 
+    (Question %in% 'Q25_3')~'disease incidence', 
+    (Question %in% 'Q25_4')~'AMU', 
+    (Question %in% 'Q25_5')~'treatment outcomes', 
+    TRUE~Question
+  ))%>%
+  mutate(Answer2 = factor(Answer, 
+                            levels = c("I  routinely review these data",
+                                       "I do not routinely review these data",
+                                       "> 50%",
+                                       "26-50%",
+                                       "Some, 6-25%",
+                                       "6-25%",
+                                       "A few, < 5%",
+                                       "< 5%", 
+                                       "None",
+                                       "Unknown", 
+                                       "No Response")
+                            )
+         )
+
+
+ggplot(df24%>%filter(Qtype %in% 'original'))+
+  geom_bar(aes(x = Question2, fill = Answer2))+
+  theme_bw()+
+  coord_flip()+
+  scale_fill_manual(values = c(        "I  routinely review these data" = '#a50f15',
+                                       "I do not routinely review these data" = 'black',
+                                       "> 50%" = '#a50f15',
+                                       "26-50%" = '#de2d26',
+                                       "Some, 6-25%" = '#fb6a4a',
+                                       #"6-25%",
+                                       "A few, < 5%" = '#fcae91',
+                                       #"< 5%", 
+                                       "None" = 'black',
+                                       #"Unknown", 
+                                       "No Response" = 'grey'))
+
+ggplot(df24%>%filter(Qtype %in% 'original'))+
+  geom_bar(aes(x = practice_type, fill = Answer2))+
+  facet_wrap(Question2~.)+
+  theme_bw()+
+  coord_flip()+
+  scale_fill_manual(values = c(        "I  routinely review these data" = '#a50f15',
+                                       "I do not routinely review these data" = 'black',
+                                       "> 50%" = '#a50f15',
+                                       "26-50%" = '#de2d26',
+                                       "Some, 6-25%" = '#fb6a4a',
+                                       #"6-25%",
+                                       "A few, < 5%" = '#fcae91',
+                                       #"< 5%", 
+                                       "None" = 'black',
+                                       #"Unknown", 
+                                       "No Response" = 'grey'))
+
+ggplot(df24%>%filter(Qtype %in% 'original'))+
+  geom_bar(aes(x = practice_type, fill = Answer2), position = position_fill())+
+  facet_wrap(Question2~.)+
+  theme_bw()+
+  coord_flip()+
+  scale_fill_manual(values = c(         "I  routinely review these data" = '#a50f15',
+                                       "I do not routinely review these data" = 'black',
+                                       "> 50%" = '#a50f15',
+                                       "26-50%" = '#de2d26',
+                                       "Some, 6-25%" = '#fb6a4a',
+                                       #"6-25%",
+                                       "A few, < 5%" = '#fcae91',
+                                       #"< 5%", 
+                                       "None" = 'black',
+                                       #"Unknown", 
+                                       "No Response" = 'grey'))+
+  ylab('Proportion')
+  
+
+  
+```
+## Question 26
+
+Q26 Given that adequate data tools were available and you were appropriately compensated, would you be willing to begin or expand routine analysis of disease incidence, antimicrobial use, and treatment outcome data with your clients? (Y/N)
+
+```{r}
+
+
+
+
+df26<-df%>%filter(str_detect(Question, 'Q26'))%>%
+  mutate(Qtype = case_when(
+    str_count(Question)<6~'original', 
+    TRUE~'modified'
+  ))%>%
+  filter(Qtype %in% 'original')
+
+ggplot(df26%>%filter(Qtype %in% 'original'))+
+    geom_bar(aes(x = practice_type, fill = Answer) )+
+
+ # geom_bar(aes(x = practice_type, fill = Answer), position = position_fill())+
+  facet_wrap(Question~.)+
+  theme_bw()+
+  coord_flip()+
+  scale_fill_manual(values = c(         'Yes' = '#a50f15',
+                                       "No" = 'black',
+                                       "No Response" = 'grey'))+
+  ylab('Proportion')
+
+ggplot(df26%>%filter(Qtype %in% 'original'))+
+ geom_bar(aes(x = practice_type, fill = Answer), position = position_fill())+
+  facet_wrap(Question~.)+
+  theme_bw()+
+  coord_flip()+
+  scale_fill_manual(values = c(         'Yes' = '#a50f15',
+                                       "No" = 'black',
+                                       "No Response" = 'grey'))+
+  ylab('Proportion')
+
+```
+## Question 27
+
+Q27 Considering the clients for which you do not review data related to disease incidence, antimicrobial use, or treatment outcome, which of these barriers do you perceive as contributing to this lack of interaction for at least some clients? 
+
+Q28 If you do not review data related to disease incidence, antimicrobial use, or treatment outcome within the herds or flocks under your care, which of these barriers do you perceive as contributing to this lack of review? 
+
+```{r}
+
+df27_pre<-df%>%filter(str_detect(Question, 'Q27'))%>%
+  filter(!(practice_type %in% 'Staff Vet'))
+
+df28_pre<-df%>%filter(str_detect(Question, 'Q28'))%>%
+  filter(practice_type %in% 'Staff Vet')
+
+  
+df27<-bind_rows(df27_pre, df28_pre)%>%
+  mutate(Qtype = case_when(
+    str_count(Question)<6~'original', 
+    TRUE~'modified'
+  ))%>%
+  filter(Qtype %in% 'original')%>%
+  separate(Answer, into = c('A', 'B', 'C', 'D', 'E', 'G', 'H', 'I'), extra = 'merge', sep = ',')%>%
+  pivot_longer(cols = A:E, 
+               names_to = 'Junk', 
+               values_to = 'Answer')%>%
+  filter(!(is.na(Answer)))
+
+df27all<-df27%>%
+  group_by(Answer)%>%
+  summarize(ct_row = sum(n()))%>%
+  ungroup()
+
+df27practice<-df27%>%
+  group_by(practice_type, Answer)%>%
+  summarize(ct_row = sum(n()))%>%
+  ungroup()
+
+ggplot(df27all)+
+    geom_bar(aes(x = reorder(Answer, ct_row), y = ct_row), fill = 'blue', stat = 'identity' )+
+  theme_bw()+
+  theme(legend.position = 'none')+
+  coord_flip()
+```
+
+
+```{r}
+ggplot(df27practice)+
+    geom_bar(aes(x = reorder(Answer, ct_row), y = ct_row, fill = practice_type), stat = 'identity' )+
+  theme_bw()+
+  theme(legend.position = 'top')+
+  coord_flip()
+
+
+```
+
+
+
+## Question 31
+
+Q31 Would you find value in having a confidential report comparing your antimicrobial use and prescribing practices to an aggregate of antimicrobial use data from other veterinarians in a similar practice situation?
+
+```{r}
+
+df31<-df%>%filter(str_detect(Question, 'Q31'))%>%
+  mutate(Qtype = case_when(
+    str_count(Question)<6~'original', 
+    TRUE~'modified'
+  ))%>%
+  filter(Qtype %in% 'original')%>%
+  mutate(Answer = factor(Answer, levels = c("Definitely yes", "Possibly",  "No" )))
+
+colors31<-c("Definitely yes" = '#a50f15',
+              "No" = 'black',
+            "Possibly" = '#fb6a4a' )
+
+ggplot(df31)+
+  geom_bar(aes(x = Answer, fill = Answer))+
+  coord_flip()+
+  scale_fill_manual(values = colors31)
+
+ggplot(df31)+
+  geom_bar(aes(x = practice_type, fill = Answer))+
+  coord_flip()+
+  scale_fill_manual(values = colors31)
+
+ggplot(df31)+
+  geom_bar(aes(x = practice_type, fill = Answer), position = position_fill())+
+  coord_flip()+
+  scale_fill_manual(values = colors31)
+
+```
+## Q32 Guidance Documents
+
+```{r}
+df32<-df%>%filter(str_detect(Question, 'Q32'))%>%
+  mutate(Qtype = case_when(
+    str_count(Question)<6~'original', 
+    TRUE~'modified'
+  ))%>%
+  filter(Qtype %in% 'original')%>%
+  separate(Answer, into = c('A', 'B', 'C', 'D', 'E', 'G', 'H', 'I'), extra = 'merge', sep = ',')%>%
+  pivot_longer(cols = A:E, 
+               names_to = 'Junk', 
+               values_to = 'Answer')%>%
+  filter(!(is.na(Answer)))
+
+df32all<-df32%>%
+  group_by(Question, Answer)%>%
+  summarize(ct_row = n_distinct(ResponseId))%>%
+  ungroup()
+
+df32practice<-df32%>%
+  group_by(practice_type,Question, Answer)%>%
+  summarize(ct_row = sum(n()))%>%
+  ungroup()
+
+
+```
+
+
+```{r}
+# ggplot(df32all)+
+#     geom_bar(aes(x = reorder(Answer, ct_row), y = ct_row, fill = Answer),  stat = 'identity' )+
+#   theme_bw()+
+#   theme(legend.position = 'none')+
+#   coord_flip()+
+#   theme(legend.position = 'none')+
+#   scale_fill_manual(values = c(" cannot recall contents" = 'grey', 
+#                                "I am aware of the document but have not read it" = 'grey',
+#                                "I read it" = 'pink', 
+#                                "I read it:  provided practical guidance" = '#a50f15',
+#                                "I read it: limited practical guidance" = '#fb6a4a',
+#                                "I read it: no practical guidance" = 'black',
+#                                 "I was unaware of the document" = 'grey',
+#                                "No Response" = 'grey' ))
+# 
+# ggplot(df32all)+
+#     geom_bar(aes(x = reorder(Question, ct_row), y = ct_row, fill = Answer),  stat = 'identity' )+
+#   theme_bw()+
+#   theme(legend.position = 'none')+
+#   coord_flip()+
+#   theme(legend.position = 'none')+
+#   scale_fill_manual(values = c(" cannot recall contents" = 'grey', 
+#                                "I am aware of the document but have not read it" = 'grey',
+#                                "I read it" = 'pink', 
+#                                "I read it:  provided practical guidance" = '#a50f15',
+#                                "I read it: limited practical guidance" = '#fb6a4a',
+#                                "I read it: no practical guidance" = 'black',
+#                                 "I was unaware of the document" = 'grey',
+#                                "No Response" = 'grey50' ))
+
+
+```
+
+```{r}
+ggplot(df27all)+
+    geom_bar(aes(x = reorder(Answer, ct_row), y = ct_row), fill = 'blue', stat = 'identity' )+
+  theme_bw()+
+  theme(legend.position = 'none')+
+  coord_flip()
+
+```
+
+
+## Question 33
+
+Q33 How many times a year do you find yourself in need of additional information to support an antimicrobial use or prescribing decision for food animals?
+
+
+```{r}
+
+```
+
+
+## Question 34
+
+Q34 In the last year, which of the following resources have you utilized for information to support an antimicrobial use or prescribing decision? 
+
+```{r}
+
+```
+
